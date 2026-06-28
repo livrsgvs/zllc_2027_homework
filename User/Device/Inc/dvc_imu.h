@@ -18,7 +18,7 @@
 //#include "dvc_boardc_ist8310.h"
 #include "alg_MahonyAHRS.h"
 #include "alg_pid.h"
-
+//#include "crt_gimbal.h"
 //----------------------------------------------------------------------------------------------------
 
 typedef struct
@@ -91,7 +91,7 @@ class Class_IMU
     float Get_Gyro_Yaw(void);
 
     Enum_IMU_Status Get_IMU_Status(void);
-
+    //Class_Gimbal_Yaw_Motor_GM6020 *Motor_Main_Yaw;
     protected:
 
     Class_MahonyAHRS IMU_MahonyAHRS;

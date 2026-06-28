@@ -54,7 +54,9 @@ void Class_IMU::TIM_Calculate_PeriodElapsedCallback(void)
     INS.Gyro[0] = BMI088_Raw_Data.Gyro[0];
     INS.Gyro[1] = BMI088_Raw_Data.Gyro[1];
     INS.Gyro[2] = BMI088_Raw_Data.Gyro[2];
-
+    // if(fabs(INS.Gyro[2]) < 0.03f && fabs(Motor_Main_Yaw->Get_Now_Omega_Radian()) < 0.03f){      //防止静止状态下的零飘
+    //     INS.Gyro[2] = 0.0f;
+    // }
     // 核心函数,EKF更新四元数
     IMU_QuaternionEKF_Update(INS.Gyro[0], INS.Gyro[1], INS.Gyro[2], INS.Accel[0], INS.Accel[1], INS.Accel[2], INS_DWT_Dt, &QEKF_INS);
 
