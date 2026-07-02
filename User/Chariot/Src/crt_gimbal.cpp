@@ -22,7 +22,24 @@
 /* Private function declarations ---------------------------------------------*/
 
 /* Function prototypes -------------------------------------------------------*/
-
+/**
+ * @brief 对于电机角度控制时的突变点处理
+ * @param Target_Angle 
+ * @param Now_Angle 
+ */
+void Angle_Continuity_Process(float* Target_Angle, float Now_Angle){
+    float Diff_Angle = *Target_Angle - Now_Angle;
+    while (Diff_Angle > 180.0f)
+    {
+        *Target_Angle -= (2 * 180.0f);
+        Diff_Angle = *Target_Angle - Now_Angle;
+    }
+    while (Diff_Angle < -180.0f)
+    {
+        *Target_Angle += (2 * 180.0f);
+        Diff_Angle = *Target_Angle - Now_Angle;
+    }
+}
 /**
  * @brief TIM定时器中断计算回调函数
  *
@@ -46,7 +63,7 @@ void Class_Gimbal_Yaw_Motor_LK::TIM_PID_PeriodElapsedCallback()
         case (LK_Motor_Control_Method_OMEGA):
         {
             PID_Omega.Set_Target(Target_Omega_Angle);
-            PID_Omega.Set_Now(Get_Transform_Omega());
+            PID_Omega.Set_Now(Transform_Omega);
             PID_Omega.TIM_Adjust_PeriodElapsedCallback();
 
             Target_Current = PID_Omega.Get_Out();
@@ -57,7 +74,7 @@ void Class_Gimbal_Yaw_Motor_LK::TIM_PID_PeriodElapsedCallback()
         case (LK_Motor_Control_Method_ANGLE):
         {
             PID_Angle.Set_Target(Target_Angle);
-            PID_Angle.Set_Now(Get_Transform_Angle());
+            PID_Angle.Set_Now(Transform_Angle);
             PID_Angle.TIM_Adjust_PeriodElapsedCallback();
 
             Target_Omega_Angle = PID_Angle.Get_Out();
@@ -81,23 +98,15 @@ void Class_Gimbal_Yaw_Motor_LK::TIM_PID_PeriodElapsedCallback()
 
 void Class_Gimbal_Yaw_Motor_LK::Disable()
 {
-    Set_LK_Motor_Control_Method(LK_Motor_Control_Method_OpenLoop);
+    Set_LK_Motor_Control_Method(LK_Motor_Control_Method_TORQUE);
     Set_Out(0.0f);
     Output();
     PID_Angle.Set_Integral_Error(0.0f);
     PID_Omega.Set_Integral_Error(0.0f);
+    PID_Torque.Set_Integral_Error(0.0f);
 }
 
-/**
- * @brief 根据不同c板的放置方式来修改这个函数
- *
- */
-void Class_Gimbal_Yaw_Motor_LK::Transform_Angle()
-{
-    True_Rad_Yaw = IMU->Get_Rad_Yaw();
-    True_Gyro_Yaw = IMU->Get_Gyro_Yaw();
-    True_Angle_Yaw = IMU->Get_Angle_Yaw();
-}
+
 
 /**
  * @brief TIM定时器中断计算回调函数
@@ -120,19 +129,19 @@ void Class_Gimbal_Pitch_Motor_J4310::TIM_PID_PeriodElapsedCallback()
                 Output_Torque = Torque_Max / 2048.0f * Out;
             }
             else if(DM_Motor_Control_Alg == DM_PID_Angle){
-                PID_Angle.Set_Now(Get_Transform_Angle());
+                PID_Angle.Set_Now(Transform_Angle);
                 PID_Angle.Set_Target(Target_Angle);
                 PID_Angle.TIM_Adjust_PeriodElapsedCallback();
                 Target_Omega = PID_Angle.Get_Out();
 
-                PID_Omega.Set_Now(Get_Transform_Omega());
+                PID_Omega.Set_Now(Transform_Omega);
                 PID_Omega.Set_Target(Target_Omega);
                 PID_Omega.TIM_Adjust_PeriodElapsedCallback();
 
                 Out = PID_Omega.Get_Out();
                 float tmp_Torque = J * Transform_Target_Acc + B * Transform_Target_Vel;  //简单的动力学补偿，参数需要根据实际负载测量后赋值
                 Out += tmp_Torque / (Torque_Max / 2048.0f);
-
+                //Out=0.f;
                 Output_Torque = Torque_Max / 2048.0f * Out;
             }
             else if(DM_Motor_Control_Alg == DM_Motor_DISANLE){
@@ -164,22 +173,14 @@ void Class_Gimbal_Pitch_Motor_J4310::Disable()
     
 }
 
-/**
- * @brief 根据不同c板的放置方式来修改这个函数
- *
- */
-void Class_Gimbal_Pitch_Motor_J4310::Transform_Angle()
-{
-    True_Rad_Pitch = -IMU->Get_Rad_Roll();
-    True_Gyro_Pitch = -IMU->Get_Gyro_Roll();
-    True_Angle_Pitch = -IMU->Get_Angle_Roll();
-}
+
 void Class_Gimbal_Yaw_Motor_GM6020::Disable(){
     Set_DJI_Motor_Control_Method(DJI_Motor_Control_Method_OPENLOOP);
     Set_Out(0.0f);
     Output();
     PID_Angle.Set_Integral_Error(0.0f);
     PID_Omega.Set_Integral_Error(0.0f);
+    PID_Torque.Set_Integral_Error(0.0f);
 }
 /**
  * @brief TIM定时器中断计算回调函数
@@ -216,7 +217,7 @@ void Class_Gimbal_Yaw_Motor_GM6020::TIM_PID_PeriodElapsedCallback()
     case (DJI_Motor_Control_Method_ANGLE):
     {
         PID_Angle.Set_Target(Target_Angle);
-        PID_Angle.Set_Now(Get_Transform_Angle());                 //转换后的角度，右手螺旋定律，标准坐标系
+        PID_Angle.Set_Now(Transform_Angle);                 //转换后的角度，右手螺旋定律，标准坐标系
         PID_Angle.TIM_Adjust_PeriodElapsedCallback();
 
         Target_Omega_Angle = PID_Angle.Get_Out();
@@ -268,25 +269,25 @@ void Class_Gimbal::Init()
     External_IMU.Init(7.9999998e-05);
 
     // main电机
-    Motor_Main_Yaw.PID_Angle.Init(0.28f, 0.0f, 0.0004f, 0.0f, 3, 15);
-    Motor_Main_Yaw.PID_Omega.Init(2200.0f, 0.0f, 0.0f, 0.0f, 400.0f, 2048.0f);
-    Motor_Main_Yaw.PID_Torque.Init(0.f, 0.0f, 0.0f, 0.0f, Motor_Main_Yaw.Get_Output_Max(), Motor_Main_Yaw.Get_Output_Max());            //这样一直输出的都是0，失能
+    Motor_Main_Yaw.PID_Angle.Init(0.28f, 0.0f, 0.0004f, 0.0f, 3, 15, 0.0f, 0.0f, 0.0f, 0.002f);
+    Motor_Main_Yaw.PID_Omega.Init(2200.0f, 0.0f, 0.0f, 0.0f, 400.0f, 2048.0f, 0.0f, 0.0f, 0.0f, 0.002f);
+    Motor_Main_Yaw.PID_Torque.Init(0.f, 0.0f, 0.0f, 0.0f, Motor_Main_Yaw.Get_Output_Max(), Motor_Main_Yaw.Get_Output_Max(), 0.0f, 0.0f, 0.0f, 0.002f);            //这样一直输出的都是0，失能
     Motor_Main_Yaw.Init(&hfdcan2, LK_Motor_ID_0x141, LK_Motor_Control_Method_ANGLE, MAIN_YAW_ENCODER_OFFSET);
 
     // yaw轴电机  0.6876f
-    Motor_Yaw.PID_Angle.Init(0.65f, 0.0f, 0.0f, 0.012f, 10, 10);
+    Motor_Yaw.PID_Angle.Init(0.65f, 0.0f, 0.0f, 0.012f, 10, 10, 0.0f, 0.0f, 0.0f, 0.002f);
     //Kp给大容易因为大小Yaw联动的噪声出问题，达不到理想的想要，用大Ki补偿误差，还有Ki对抖动不敏感（积分，相位延迟）强制补偿掉，也可以尝试LESO，但他可能对噪声敏感一些（重在抗扰动）
     //Ki太大对阶跃信号抖动滞后，不用了
-    Motor_Yaw.PID_Omega.Init(6300.0f, 7000.0f, 0.0f, 0.0f, Motor_Yaw.Get_Output_Max(), Motor_Yaw.Get_Output_Max());
-    Motor_Yaw.PID_Torque.Init(0.f, 0.0f, 0.0f, 0.0f, Motor_Yaw.Get_Output_Max(), Motor_Yaw.Get_Output_Max());
+    Motor_Yaw.PID_Omega.Init(6300.0f, 7000.0f, 0.0f, 0.0f, Motor_Yaw.Get_Output_Max(), Motor_Yaw.Get_Output_Max(), 0.0f, 0.0f, 0.0f, 0.002f);
+    Motor_Yaw.PID_Torque.Init(0.f, 0.0f, 0.0f, 0.0f, Motor_Yaw.Get_Output_Max(), Motor_Yaw.Get_Output_Max(), 0.0f, 0.0f, 0.0f, 0.002f);
 
     Motor_Yaw.SMC_Control.Init(0.005, 85.0, 85.0, 5.0);
 
     Motor_Yaw.Init(&hfdcan1, DJI_Motor_ID_0x205, DJI_Motor_Control_Method_ANGLE, YAW_ENCODER_OFFSET);
-    
-   
-    Motor_Pitch.PID_Angle.Init(0.7f, 0.0f, 0.0018f, 0.0f, 2.0f, 5.0f);
-    Motor_Pitch.PID_Omega.Init(-200.0f, -100.f, 0.0f, 0.0f, 2048.0f, 2048.0f);
+
+
+    Motor_Pitch.PID_Angle.Init(0.7f, 0.0f, 0.0018f, 0.0f, 2.0f, 5.0f, 0.0f, 0.0f, 0.0f, 0.002f);
+    Motor_Pitch.PID_Omega.Init(-200.0f, -100.f, 0.0f, 0.0f, 2048.0f, 2048.0f, 0.0f, 0.0f, 0.0f, 0.002f);
     Motor_Pitch.Init(&hfdcan1, DM_Motor_ID_0x02, DM_Motor_Control_Method_MIT_TORQUE, 0.0f, 30.0f, 7.0f);
 
     // Motor_Pitch.Set_Motor_Parameters(0.0f, 0.0f, 0.0f, 0.0f);
@@ -315,7 +316,11 @@ void Class_Gimbal::Output()
     {
         Motor_Main_Yaw.Disable();
         Motor_Yaw.Disable();
-        Motor_Pitch.Disable();
+        // Motor_Pitch.Disable();
+        Motor_Pitch.Set_DM_Motor_Control_Alg(DM_Motor_DISANLE);
+        Motor_Pitch.PID_Angle.Set_Integral_Error(0.0f);
+        Motor_Pitch.PID_Omega.Set_Integral_Error(0.0f);
+        Motor_Pitch.Set_Target_Torque(0.0f);
         last_mode_for_cruise = -1;       //重置巡航状态
 
         camera_switch_status = 0;
@@ -563,14 +568,36 @@ void Class_Gimbal::Output()
  */
 void Class_Gimbal::TIM_Calculate_PeriodElapsedCallback()
 {
+    External_IMU_Gyro_Yaw.Set_Now(External_IMU.Get_Gyro_Yaw());
+    External_IMU_Gyro_Yaw.Recv_Adjust_PeriodElapsedCallback();              //滤除由于大Yaw转动带来的联动噪声
+    External_IMU_Gyro_Pitch.Set_Now(External_IMU.Get_Gyro_Pitch());
+    External_IMU_Gyro_Pitch.Recv_Adjust_PeriodElapsedCallback();              //滤除由于大Yaw转动带来的联动噪声
+   
+    //数据传输更新        记得对方向
+    Motor_Yaw.Set_Transform_Omega(External_IMU_Gyro_Yaw.Get_Out());
+    Motor_Yaw.Set_Transform_Angle(Motor_Yaw.Get_Zero_Offset_Angle());
+
+    Motor_Main_Yaw.Set_Transform_Omega(Boardc_BMI.Get_Gyro_Yaw());
+    Motor_Main_Yaw.Set_Transform_Angle(Boardc_BMI.Get_Angle_Yaw());
+
+    Motor_Pitch.Set_Transform_Omega(-External_IMU_Gyro_Pitch.Get_Out());
+    Motor_Pitch.Set_Transform_Angle(-External_IMU.Get_Angle_Pitch());
     Output();
 
-    // 根据不同c板的放置方式来修改这几个函数
-    Motor_Main_Yaw.Transform_Angle();
-    Motor_Pitch.Transform_Angle();
-
-    Motor_Main_Yaw.TIM_PID_PeriodElapsedCallback();
+    //PID输出         (对齐工作版M67_2026的调用顺序)
+    Motor_Yaw.TIM_PID_PeriodElapsedCallback();
     Motor_Pitch.TIM_PID_PeriodElapsedCallback();
+    Motor_Main_Yaw.TIM_Process_PeriodElapsedCallback();
+
+    if(Get_Gimbal_Control_Type() != Gimbal_Control_Type_DISABLE){
+        Pitch_Compensite_Output = test_c * cosf(Motor_Pitch.Get_Transform_Angle() / 57.3f + atan2f(9.718f, 58.285f));
+        // Pitch_Compensite_Output = Motor_Pitch_LESO.Get_Compensation_Out();
+        Motor_Pitch.Compensite_Out(Pitch_Compensite_Output);
+    }
+    else{
+        Pitch_Compensite_Output = 0;
+        Motor_Pitch.Compensite_Out(Pitch_Compensite_Output);
+    }
 }
 
 /************************ COPYRIGHT(C) USTC-ROBOWALKER **************************/
